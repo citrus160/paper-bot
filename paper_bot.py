@@ -10,38 +10,44 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 def get_papers():
     print("논문 검색 시작...")
     try:
-        # 검색어를 조금 더 단순하게 바꿔서 차단 확률을 낮춥니다.
-        search_query = scholarly.search_pubs('metasurface "saturable absorber"')
+        # 검색 결과가 너무 많으면 오류가 날 수 있어 키워드를 정교하게 조정했습니다.
+        search_query = scholarly.search_pubs('metasurface "noise-like pulse"')
         papers = []
         for i, paper in enumerate(search_query):
-            if i >= 3: break # 일단 3개만 테스트
-            papers.append(f"Title: {paper['bib']['title']}\nAbstract: {paper['bib'].get('abstract', 'No abstract')[:300]}...")
+            if i >= 3: break 
+            title = paper['bib'].get('title', 'No Title')
+            abstract = paper['bib'].get('abstract', 'No abstract available')
+            papers.append(f"Title: {title}\nAbstract: {abstract[:500]}...")
         
-        if not papers:
-            print("검색 결과가 없습니다.")
-        return "\n\n".join(papers)
+        return "\n\n".join(papers) if papers else None
     except Exception as e:
-        print(f"구글 스칼라 검색 중 에러 발생: {e}")
+        print(f"검색 중 에러: {e}")
         return None
 
 def main():
-    if not DISCORD_WEBHOOK_URL:
-        print("디스코드 웹훅 URL이 설정되지 않았습니다.")
-        return
-
     paper_text = get_papers()
     
     if paper_text:
         print("Gemini 요약 중...")
         genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(f"다음 논문들을 연구자 관점에서 한국어로 요약해줘:\n\n{paper_text}")
         
-        # 디스코드 전송
-        res = requests.post(DISCORD_WEBHOOK_URL, json={"content": response.text})
-        print(f"디스코드 전송 결과: {res.status_code}")
+        # [수정 포인트] 모델명을 최신 버전인 'gemini-1.5-flash-latest'로 명시합니다.
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        
+        try:
+            response = model.generate_content(
+                f"당신은 광학/광자학 전문가입니다. 다음 논문들을 핵심 위주로 한국어로 요약해줘:\n\n{paper_text}",
+                generation_config=genai.types.GenerationConfig(temperature=0.3)
+            )
+            
+            # 디바이스 전송
+            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"🚀 **이번 주 최신 논문 요약**\n\n{response.text}"})
+            print("성공적으로 전송되었습니다!")
+            
+        except Exception as e:
+            print(f"Gemini 생성 에러: {e}")
     else:
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": "이번 주엔 조건에 맞는 논문을 찾지 못했습니다."})
+        print("요약할 논문을 찾지 못했습니다.")
 
 if __name__ == "__main__":
     main()
