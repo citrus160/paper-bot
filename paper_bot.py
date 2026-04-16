@@ -1,51 +1,55 @@
 import os
 import requests
-from scholarly import scholarly
 import google.generativeai as genai
-import time
 
+# 환경 변수
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-def get_papers():
-    print("논문 검색 시도 중...")
+def get_papers_arxiv():
+    print("arXiv에서 논문 검색 중 (이 방식이 훨씬 빠르고 안전합니다)...")
+    # 검색어: metasurface AND "noise-like pulse"
+    # 속도를 위해 최근 논문 3개만 가져옵니다.
+    query = 'all:metasurface AND all:"noise-like pulse"'
+    url = f'http://export.arxiv.org/api/query?search_query={query}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
+    
     try:
-        # 검색 범위를 최근 1년으로 좁히고, 검색어를 더 명확히 해서 속도를 높입니다.
-        search_query = scholarly.search_pubs('metasurface "noise-like pulse"', year_low=2025)
-        papers = []
+        response = requests.get(url, timeout=15)
+        content = response.text
         
-        # 딱 2개만 빠르게 가져오기
-        for i, paper in enumerate(search_query):
-            if i >= 2: break
-            title = paper['bib'].get('title', '제목 없음')
-            abstract = paper['bib'].get('abstract', '초록 없음')
-            papers.append(f"Title: {title}\nAbstract: {abstract[:400]}")
-            print(f"{i+1}번째 논문 발견!")
-            time.sleep(1) # 구글의 의심을 피하기 위한 짧은 휴식
+        # 간단한 텍스트 파싱 (라이브러리 추가 설치 방지)
+        papers = []
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(content)
+        
+        for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
+            title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip()
+            summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip()
+            papers.append(f"Title: {title}\nAbstract: {summary[:500]}...")
             
         return "\n\n".join(papers) if papers else None
     except Exception as e:
-        print(f"검색 중 오류 발생 (아마 구글 차단): {e}")
+        print(f"arXiv 검색 중 에러: {e}")
         return None
 
 def main():
-    paper_text = get_papers()
+    paper_text = get_papers_arxiv()
     
+    if not paper_text:
+        print("논문을 찾지 못했거나 검색에 실패했습니다.")
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": "⚠️ 이번 주에는 새로운 논문을 찾지 못했습니다."})
+        return
+
+    print("Gemini 요약 중...")
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     
-    if paper_text:
-        print("Gemini 요약 중...")
-        try:
-            response = model.generate_content(f"광학 연구자를 위해 다음 논문을 요약해줘:\n\n{paper_text}")
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"✅ **최신 논문 도착**\n\n{response.text}"})
-            print("디스코드 전송 완료!")
-        except Exception as e:
-            print(f"Gemini 에러: {e}")
-    else:
-        # 검색이 막혔을 경우를 대비해 알림을 보냅니다.
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": "⚠️ 구글 스칼라 검색이 일시적으로 제한되었습니다. 나중에 다시 시도하거나 검색 키워드를 조정해 보세요."})
-        print("검색 결과 없음 알림 전송")
+    try:
+        response = model.generate_content(f"연구자를 위해 다음 광학 논문들을 한국어로 핵심 요약해줘:\n\n{paper_text}")
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": f"🚀 **arXiv 최신 논문 요약**\n\n{response.text}"})
+        print("전송 성공!")
+    except Exception as e:
+        print(f"Gemini 에러: {e}")
 
 if __name__ == "__main__":
     main()
