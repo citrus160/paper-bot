@@ -2,19 +2,22 @@ name: Weekly Paper Bot
 
 on:
   schedule:
-    # 매주 월요일 오전 9시 (KST) = UTC 0시
     - cron: '0 0 * * 1'
-  workflow_dispatch: # 수동으로 실행해볼 수 있게 하는 기능
+  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      # v3에서 v4로 업데이트 (Node.js 최신 버전 지원)
+      - uses: actions/checkout@v4 
+      
+      # v4에서 v5로 업데이트 (Node.js 최신 버전 지원)
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+          
       - name: Install dependencies
         run: |
           pip install scholarly google-generativeai requests
