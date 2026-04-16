@@ -1,0 +1,27 @@
+name: Weekly Paper Bot
+
+on:
+  schedule:
+    # 매주 월요일 오전 9시 (KST) = UTC 0시
+    - cron: '0 0 * * 1'
+  workflow_dispatch: # 수동으로 실행해볼 수 있게 하는 기능
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install scholarly google-generativeai requests
+      - name: Run Python script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
+          ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
+        run: python paper_bot.py
