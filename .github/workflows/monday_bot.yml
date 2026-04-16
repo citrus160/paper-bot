@@ -26,5 +26,5 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
           ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
-        # 파일 경로 에러를 방지하기 위해 현재 폴더를 명시합니다.
-        run: python ./.github/workflows/paper_bot.py
+        # 이제 파일이 밖에 있으니까 간단하게 실행하면 됩니다!
+        run: python paper_bot.py
