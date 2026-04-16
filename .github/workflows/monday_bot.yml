@@ -1,30 +1,29 @@
 name: Weekly Paper Bot
-
 on:
+  workflow_dispatch: # 수동 실행용
   schedule:
     - cron: '0 0 * * 1'
-  workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: 코드를 가져옵니다
+        uses: actions/checkout@v4
       
-      - name: Set up Python
+      - name: 파일이 진짜 있는지 목록 출력 (디버깅)
+        run: ls -R
+        
+      - name: 파이썬 설정
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
           
-      - name: Install dependencies
-        run: |
-          pip install scholarly google-generativeai requests
+      - name: 라이브러리 설치
+        run: pip install scholarly google-generativeai requests
           
-      - name: Run Python script
+      - name: 봇 실행
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
-          ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
-        # 이제 파일이 밖에 있으니까 간단하게 실행하면 됩니다!
         run: python paper_bot.py
