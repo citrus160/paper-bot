@@ -10,9 +10,9 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # 2. 검색하고 싶은 키워드 리스트 (여기에 자유롭게 추가/수정하세요)
 KEYWORDS = [
-    'metasurface AND "saturable absorber"',
-    'metalens AND "THz"',
-    '"metasurface" AND liquid crystals'
+    'metasurface',
+    'metalens',
+    'saturable absorber'
 ]
 
 def get_papers_arxiv(query):
