@@ -27,4 +27,4 @@ jobs:
           ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
           ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
         # 파일 경로 에러를 방지하기 위해 현재 폴더를 명시합니다.
-        run: python ./paper_bot.py
+        run: python ./.github/workflows/paper_bot.py
