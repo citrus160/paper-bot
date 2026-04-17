@@ -58,7 +58,7 @@ def get_unread_papers():
         unread = []
         for item in items:
             tags = [t["tag"] for t in item["data"].get("tags", [])]
-            if READ_TAG not in tags:
+            if not any(tag in EXCLUDE_TAGS for tag in tags):
                 unread.append(item)
 
         return random.choice(unread) if unread else None
