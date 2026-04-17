@@ -8,7 +8,7 @@ import time
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# 2. 검색 키워드 리스트 (원하는 만큼 추가/수정하세요)
+# 2. 검색 키워드 리스트
 KEYWORDS = [
     'metasurface AND "noise-like pulse"',
     'metasurface AND "saturable absorber"',
@@ -16,10 +16,9 @@ KEYWORDS = [
 ]
 
 def get_papers_arxiv(query):
-    """arXiv에서 최신 논문을 검색합니다."""
-    print(f"🔍 검색 중: {query}")
+    """arXiv에서 논문을 검색하고 기본 정보를 리스트로 반환합니다."""
     encoded_query = requests.utils.quote(query)
-    # 최근 논문 상위 3개 검색
+    # 최신 논문 상위 3개 호출
     url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
     
     try:
@@ -27,12 +26,18 @@ def get_papers_arxiv(query):
         root = ET.fromstring(response.text)
         papers = []
         for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
-            title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip()
-            summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip()
-            papers.append(f"Title: {title}\nAbstract: {summary[:500]}...")
+            title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' ')
+            published = entry.find('{http://www.w3.org/2005/Atom}published').text.strip()[:10] # 날짜만 추출 (YYYY-MM-DD)
+            summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
+            
+            papers.append({
+                "title": title,
+                "date": published,
+                "abstract": summary
+            })
         return papers
     except Exception as e:
-        print(f"❌ 검색 오류: {e}")
+        print(f"❌ 검색 오류 ({query}): {e}")
         return []
 
 def main():
@@ -41,40 +46,51 @@ def main():
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
     for kw in KEYWORDS:
-        results = get_papers_arxiv(kw)
+        raw_papers = get_papers_arxiv(kw)
         
-        # [핵심] 논문이 없는 경우 처리
-        if not results:
-            print(f"⚠️ '{kw}' 결과 없음")
-            no_paper_msg = f"ℹ️ **분야: {kw}**\n이번 주에는 이 키워드에 대한 새로운 추천 논문이 없습니다."
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": no_paper_msg})
+        if not raw_papers:
+            msg = f"ℹ️ **분야: {kw}**\n이번 주에는 새로운 추천 논문이 없습니다."
+            requests.post(DISCORD_WEBHOOK_URL, json={"content": msg})
             continue
 
-        # 논문이 있는 경우 요약 진행
-        print(f"🤖 '{kw}' 요약 중...")
-        paper_context = "\n\n".join(results)
+        # 제미나이에게 논문 정리를 시킵니다.
+        print(f"🤖 제미나이가 '{kw}' 논문을 정리 중입니다...")
+        
+        # 데이터를 텍스트로 변환하여 제미나이에게 전달
+        paper_input = ""
+        for p in raw_papers:
+            paper_input += f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}\n\n"
+
         prompt = f"""
-        당신은 광학/광자학 전문 연구원입니다. 
-        키워드 [{kw}]로 검색된 다음 최신 논문들을 한국어로 전문성 있게 요약해 주세요.
+        당신은 광학 분야 전문 AI 비서입니다. 아래 제공된 논문 정보를 바탕으로 연구자를 위한 브리핑을 작성해주세요.
         
-        형식:
-        ## 📌 분야: {kw}
-        * **논문 제목**
-        * **핵심 요약**: (연구 목적과 결과를 한 줄로)
-        * **기술적 포인트**: (구체적인 물리적 현상이나 수치 등 언급)
+        **요청 사항**:
+        1. 각 논문마다 아래의 형식을 반드시 지켜주세요.
+        2. 초록은 핵심만 간결하게 한국어로 번역 및 요약해주세요.
+        3. 키워드 [{kw}]에 대한 보고서임을 명시하세요.
+
+        **출력 형식**:
+        ## 📂 분야: {kw}
         ---
+        ### 📄 논문 제목: [여기에 제목]
+        * 📅 **업로드 날짜**: [YYYY-MM-DD]
+        * 📝 **초록 요약**: [한국어로 요약된 내용]
         
-        논문 목록:
-        {paper_context}
+        (다음 논문이 있다면 위 형식을 반복)
         """
         
         try:
-            response = model.generate_content(prompt)
+            # 제미나이가 직접 검색 결과를 가공
+            combined_prompt = prompt + "\n\n[논문 데이터]\n" + paper_input
+            response = model.generate_content(combined_prompt)
+            
+            # 디스코드 전송
             requests.post(DISCORD_WEBHOOK_URL, json={"content": response.text})
-            print(f"✅ '{kw}' 전송 완료")
-            time.sleep(2) # 전송 간격 조절
+            print(f"✅ '{kw}' 분야 전송 완료")
+            time.sleep(3) # 전송 간격 유지
+            
         except Exception as e:
-            print(f"❌ Gemini 에러: {e}")
+            print(f"❌ 제미나이 처리 오류: {e}")
 
 if __name__ == "__main__":
     main()
