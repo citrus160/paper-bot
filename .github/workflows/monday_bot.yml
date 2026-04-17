@@ -1,27 +1,27 @@
 name: Weekly Paper Bot
-
 on:
   workflow_dispatch:
   schedule:
     - cron: '0 1 * * 1'  # 월요일 오전 10시 (KST)
-
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Python 설정
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: 라이브러리 설치
         run: pip install google-generativeai aiohttp requests
-
       - name: 봇 실행
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python paper_bot.py
+      - name: 키 검증        # ← 여기 추가
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "키 길이: ${#GEMINI_API_KEY}"
+          echo "키 앞 4글자: ${GEMINI_API_KEY:0:4}"
