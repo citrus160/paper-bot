@@ -16,7 +16,7 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 genai.configure(api_key=GEMINI_API_KEY)
 
 KEYWORDS = [
-    'metasurface AND "noise-like pulse"',
+    'metasurface',
     'metasurface AND "saturable absorber"',
     'laser AND "two-temperature model"'
 ]
