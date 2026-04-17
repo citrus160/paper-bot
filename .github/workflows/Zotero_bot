@@ -1,0 +1,25 @@
+name: Zotero Reading Bot
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 1 * * 2'  # 화요일 오전 10시 (KST)
+    - cron: '0 1 * * 4'  # 목요일 오전 10시 (KST)
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: 라이브러리 설치
+        run: pip install aiohttp requests pymupdf
+      - name: 봇 실행
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
+          ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
+        run: python zotero_bot.py
+ 
