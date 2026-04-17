@@ -25,10 +25,3 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python paper_bot.py
-
-- name: 키 검증
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          echo "키 길이: ${#GEMINI_API_KEY}"
-          echo "키 앞 4글자: ${GEMINI_API_KEY:0:4}"
