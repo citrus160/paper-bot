@@ -211,8 +211,8 @@ def select_papers(topic_name, papers):
         return papers[:2]
 
 def summarize_paper(paper):
-    """논문 영어 요약"""
-    prompt = f"""Summarize the key content of the following paper in 2-3 sentences in English.
+    """논문 한국어 요약"""
+    prompt = f"""Summarize the key content of the following paper in 2-3 sentences in Korean.
 
 Title: {paper['title']}
 Date: {paper['date']}
@@ -276,7 +276,7 @@ async def main():
                     f"**[{i}] {paper['title']}**\n"
                     f"📅 {paper['date']} | 📌 {paper['source']}\n"
                     f"{summary}\n"
-                    f"🔗 {paper['link']}"
+                    f"🔗 <{paper['link']}>"
                 )
                 await send_discord(session, message)
                 # 전송한 논문 링크 기록
