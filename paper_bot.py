@@ -14,7 +14,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("models/gemini-1.5-pro")
 
 KEYWORDS = [
     'metasurface AND "noise-like pulse"',
@@ -23,18 +22,28 @@ KEYWORDS = [
 ]
 
 # =========================
-# Gemini 요약
+# Gemini (안정화 버전)
 # =========================
 def ask_gemini(prompt_text):
-    try:
-        response = model.generate_content(prompt_text)
-        return response.text
-    except Exception as e:
-        return f"❌ Gemini 오류: {str(e)}"
+    last_error = None
+
+    for _ in range(3):  # 최대 3번 재시도
+        try:
+            model = genai.GenerativeModel("models/gemini-1.5-pro")  # 매번 새로 생성
+            response = model.generate_content(prompt_text)
+
+            if response and response.text:
+                return response.text
+
+        except Exception as e:
+            last_error = str(e)
+            time.sleep(3)
+
+    return f"❌ Gemini 실패(재시도): {last_error}"
 
 
 # =========================
-# arXiv 검색
+# arXiv
 # =========================
 def get_arxiv_papers(query):
     encoded_query = requests.utils.quote(query)
@@ -60,7 +69,7 @@ def get_arxiv_papers(query):
 
 
 # =========================
-# Semantic Scholar 검색
+# Semantic Scholar
 # =========================
 def get_semantic_papers(query):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -91,17 +100,17 @@ def get_semantic_papers(query):
 
 
 # =========================
-# Discord 전송 (비동기)
+# Discord
 # =========================
 async def send_discord(session, message):
     try:
-        await session.post(DISCORD_WEBHOOK_URL, json={"content": message})
+        await session.post(DISCORD_WEBHOOK_URL, json={"content": message}, timeout=10)
     except Exception as e:
         print("Discord 전송 실패:", e)
 
 
 # =========================
-# 메인 실행
+# 메인
 # =========================
 async def main():
     async with aiohttp.ClientSession() as session:
@@ -119,27 +128,30 @@ async def main():
                     await send_discord(session, f"ℹ️ **[{kw}]**: 신규 논문 없음")
                     continue
 
-                # 중복 제거 (title 기준)
+                # 중복 제거
                 seen = set()
-                unique_papers = []
+                unique = []
                 for p in papers:
                     if p["title"] not in seen:
                         seen.add(p["title"])
-                        unique_papers.append(p)
+                        unique.append(p)
 
+                # 프롬프트 생성 (길이 제한)
                 paper_text = ""
-                for p in unique_papers[:5]:
+                for p in unique[:5]:
                     paper_text += f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}\n\n"
+
+                paper_text = paper_text[:3000]  # 핵심 안정화 포인트
 
                 prompt = f"""
 너는 광학 및 레이저 물리 연구자이다.
 
 다음 논문들을:
-1. 핵심 물리 메커니즘 중심으로
-2. 실험/이론 구분해서
-3. 연구 가치 기준으로
+- 핵심 물리 메커니즘 중심
+- 실험 vs 이론 구분
+- 연구 가치 중심
 
-간결하지만 전문적으로 한국어로 요약해라.
+간결하고 전문적으로 한국어로 요약해라.
 
 {paper_text}
 """
@@ -151,7 +163,8 @@ async def main():
                     f"## 📌 분야: {kw}\n\n{summary}"
                 )
 
-                await asyncio.sleep(3)
+                # 🔥 핵심: 충분한 딜레이
+                await asyncio.sleep(8)
 
             except Exception as e:
                 await send_discord(
