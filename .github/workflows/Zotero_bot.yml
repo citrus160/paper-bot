@@ -18,7 +18,7 @@ jobs:
       - name: 봇 실행
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ZOTERO_DISCORD_WEBHOOK_URL: ${{ secrets.ZOTERO_DISCORD_WEBHOOK_URL }}
           ZOTERO_API_KEY: ${{ secrets.ZOTERO_API_KEY }}
           ZOTERO_USER_ID: ${{ secrets.ZOTERO_USER_ID }}
         run: python zotero_bot.py
