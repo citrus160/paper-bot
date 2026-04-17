@@ -8,7 +8,7 @@ import aiohttp
 
 # 환경 변수
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+ZOTERO_DISCORD_WEBHOOK_URL = os.getenv("ZOTERO_DISCORD_WEBHOOK_URL")
 ZOTERO_API_KEY = os.getenv("ZOTERO_API_KEY")
 ZOTERO_USER_ID = os.getenv("ZOTERO_USER_ID")
 
