@@ -70,20 +70,26 @@ async def send_discord(session, message):
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        await send_discord(session, "📡 **논문 탐색 엔진 가동 (검색 범위 최적화 버전)**")
+        await send_discord(session, "📡 **논문 탐색 엔진 가동**")
 
         for topic in TOPICS:
-            # Step 1: 검색어 생성 (너무 복잡하지 않게 유도)
-            query_prompt = f"연구 주제 [{topic}]를 arXiv에서 검색하기 위한 2~3개의 핵심 키워드 조합만 영어로 보내줘. 예: (Metasurface AND Laser). 다른 설명 금지."
+            # 1. 제미나이가 검색어 생성
+            query_prompt = f"연구 주제 [{topic}]를 arXiv에서 검색하기 위한 핵심 영어 키워드 2개만 조합해서 보내줘. (예: Metasurface AND Laser). 설명 없이 딱 검색어만."
             optimized_query = ask_gemini(query_prompt)
-            if not optimized_query: continue
+            
+            if not optimized_query:
+                continue
             optimized_query = optimized_query.strip().replace('"', '')
 
-            # Step 2: 논문 수집
+            # [추가] 검색어를 디스코드에 보고 (이게 뜨는지 확인하세요!)
+            await send_discord(session, f"🔎 **[{topic}]** 주제에 대해 `{optimized_query}`로 검색을 시도합니다...")
+
+            # 2. 논문 수집
             raw_papers = get_arxiv_papers(optimized_query)
 
             if not raw_papers:
-                await send_discord(session, f"ℹ️ **[{topic}]**: 최근 1개월 내 arXiv에 등록된 관련 논문이 없습니다.")
+                # [확인] 이 메시지가 오는지 확인하세요!
+                await send_discord(session, f"ℹ️ 검색어 `{optimized_query}`에 해당하는 최근 1개월 논문이 0건입니다.")
                 continue
 
             # Step 3: 제미나이의 정밀 선별
