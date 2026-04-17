@@ -2,10 +2,19 @@ import os
 import requests
 import xml.etree.ElementTree as ET
 import time
+import asyncio
+import aiohttp
 
+import google.generativeai as genai
+
+# =========================
 # 환경 변수
+# =========================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 KEYWORDS = [
     'metasurface AND "noise-like pulse"',
@@ -13,78 +22,148 @@ KEYWORDS = [
     'laser AND "two-temperature model"'
 ]
 
+# =========================
+# Gemini 요약
+# =========================
 def ask_gemini(prompt_text):
-    """모델명을 풀 네임으로 수정하여 v1beta1 주소로 재시도합니다."""
-    # [수정] 모델 경로를 가장 확실한 'v1beta'와 'models/gemini-1.5-flash' 조합으로 복구하되, 
-    # API 호출 구조를 가장 원시적인 형태로 유지합니다.
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {'Content-Type': 'application/json'}
-    
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt_text}]
-        }]
-    }
-    
     try:
-        res = requests.post(url, headers=headers, json=payload, timeout=30)
-        res_json = res.json()
-        
-        # 에러 발생 시 상세 정보 출력
-        if 'error' in res_json:
-            error_code = res_json['error'].get('code')
-            error_msg = res_json['error'].get('message')
-            return f"❌ API 에러({error_code}): {error_msg}"
-            
-        if 'candidates' in res_json and len(res_json['candidates']) > 0:
-            return res_json['candidates'][0]['content']['parts'][0]['text']
-        
-        return "⚠️ 응답 데이터 구조에 답변이 포함되어 있지 않습니다."
+        response = model.generate_content(prompt_text)
+        return response.text
     except Exception as e:
-        return f"❌ 시스템 오류: {str(e)}"
+        return f"❌ Gemini 오류: {str(e)}"
 
-def get_papers_arxiv(query):
+
+# =========================
+# arXiv 검색
+# =========================
+def get_arxiv_papers(query):
     encoded_query = requests.utils.quote(query)
-    url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=2&sortBy=submittedDate&sortOrder=descending'
+    url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
+
     try:
-        response = requests.get(url, timeout=40)
-        root = ET.fromstring(response.text)
+        res = requests.get(url, timeout=30)
+        root = ET.fromstring(res.text)
+
         entries = root.findall('{http://www.w3.org/2005/Atom}entry')
         papers = []
-        for entry in entries:
-            title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' ')
-            date = entry.find('{http://www.w3.org/2005/Atom}published').text.strip()[:10]
-            abstract = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
-            papers.append({"title": title, "date": date, "abstract": abstract})
+
+        for e in entries:
+            papers.append({
+                "title": e.find('{http://www.w3.org/2005/Atom}title').text.strip(),
+                "date": e.find('{http://www.w3.org/2005/Atom}published').text[:10],
+                "abstract": e.find('{http://www.w3.org/2005/Atom}summary').text.strip()
+            })
+
         return papers
     except:
         return []
 
-def main():
-    requests.post(DISCORD_WEBHOOK_URL, json={"content": "📡 **논문 분석 엔진을 재기동합니다. (v1beta 모델 경로 적용)**"})
 
-    for kw in KEYWORDS:
-        try:
-            raw_papers = get_papers_arxiv(kw)
-            if not raw_papers:
-                requests.post(DISCORD_WEBHOOK_URL, json={"content": f"ℹ️ **[{kw}]**: 신규 논문 없음"})
+# =========================
+# Semantic Scholar 검색
+# =========================
+def get_semantic_papers(query):
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    params = {
+        "query": query,
+        "limit": 3,
+        "fields": "title,abstract,year"
+    }
+
+    try:
+        res = requests.get(url, params=params, timeout=30)
+        data = res.json()
+
+        papers = []
+        for p in data.get("data", []):
+            if not p.get("abstract"):
                 continue
 
-            paper_input = ""
-            for p in raw_papers:
-                paper_input += f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}\n\n"
+            papers.append({
+                "title": p["title"],
+                "date": str(p.get("year", "")),
+                "abstract": p["abstract"]
+            })
 
-            prompt = f"광학 연구원을 위해 다음 논문들을 한국어로 전문성 있게 요약해줘:\n\n{paper_input}"
-            summary = ask_gemini(prompt)
-            
-            # 결과 전송
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"## 📌 분야: {kw}\n\n{summary}"})
-            time.sleep(5)
+        return papers
+    except:
+        return []
 
-        except Exception as e:
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"❌ **[{kw}]** 치명적 에러: {str(e)}"})
 
-    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🏁 **리포트 완료**"})
+# =========================
+# Discord 전송 (비동기)
+# =========================
+async def send_discord(session, message):
+    try:
+        await session.post(DISCORD_WEBHOOK_URL, json={"content": message})
+    except Exception as e:
+        print("Discord 전송 실패:", e)
 
+
+# =========================
+# 메인 실행
+# =========================
+async def main():
+    async with aiohttp.ClientSession() as session:
+
+        await send_discord(session, "📡 **논문 분석 엔진 시작 (v2 안정화 버전)**")
+
+        for kw in KEYWORDS:
+            try:
+                arxiv = get_arxiv_papers(kw)
+                semantic = get_semantic_papers(kw)
+
+                papers = arxiv + semantic
+
+                if not papers:
+                    await send_discord(session, f"ℹ️ **[{kw}]**: 신규 논문 없음")
+                    continue
+
+                # 중복 제거 (title 기준)
+                seen = set()
+                unique_papers = []
+                for p in papers:
+                    if p["title"] not in seen:
+                        seen.add(p["title"])
+                        unique_papers.append(p)
+
+                paper_text = ""
+                for p in unique_papers[:5]:
+                    paper_text += f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}\n\n"
+
+                prompt = f"""
+너는 광학 및 레이저 물리 연구자이다.
+
+다음 논문들을:
+1. 핵심 물리 메커니즘 중심으로
+2. 실험/이론 구분해서
+3. 연구 가치 기준으로
+
+간결하지만 전문적으로 한국어로 요약해라.
+
+{paper_text}
+"""
+
+                summary = ask_gemini(prompt)
+
+                await send_discord(
+                    session,
+                    f"## 📌 분야: {kw}\n\n{summary}"
+                )
+
+                await asyncio.sleep(3)
+
+            except Exception as e:
+                await send_discord(
+                    session,
+                    f"❌ **[{kw}] 오류:** {str(e)}"
+                )
+
+        await send_discord(session, "🏁 **리포트 완료**")
+
+
+# =========================
+# 실행
+# =========================
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
