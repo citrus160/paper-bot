@@ -8,7 +8,7 @@ import aiohttp
 
 # 환경 변수
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-DISCORD_WEBHOOK_URL = os.getenv("ZOTERO_DISCORD_WEBHOOK_URL")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 ZOTERO_API_KEY = os.getenv("ZOTERO_API_KEY")
 ZOTERO_USER_ID = os.getenv("ZOTERO_USER_ID")
 
@@ -17,7 +17,7 @@ HEADERS = {
     "Zotero-API-Key": ZOTERO_API_KEY,
     "Content-Type": "application/json"
 }
-READ_TAG = "✅Read"
+READ_TAG = "BOT"
 
 def ask_groq(prompt_text):
     """Groq API 호출"""
@@ -145,7 +145,9 @@ Please provide:
 2. **Methods** (1-2 sentences): How did they do it?
 3. **Significance** (1-2 sentences): Why does this matter?
 
-Be concise and technical."""
+Be concise and technical. 
+
+Please in Korean"""
 
     return ask_groq(prompt)
 
