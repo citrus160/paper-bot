@@ -4,93 +4,72 @@ import google.generativeai as genai
 import xml.etree.ElementTree as ET
 import time
 
-# 1. 환경 변수 설정
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# 2. 검색 키워드 리스트
+# 분야별 키워드 (테스트를 위해 3개를 명확히 둠)
 KEYWORDS = [
     'metasurface AND "noise-like pulse"',
     'metasurface AND "saturable absorber"',
     '"two-temperature model" AND laser'
 ]
 
-def get_papers_arxiv(query):
-    """arXiv에서 논문을 검색하고 기본 정보를 리스트로 반환합니다."""
-    encoded_query = requests.utils.quote(query)
-    # 최신 논문 상위 3개 호출
-    url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=3&sortBy=submittedDate&sortOrder=descending'
-    
-    try:
-        response = requests.get(url, timeout=15)
-        root = ET.fromstring(response.text)
-        papers = []
-        for entry in root.findall('{http://www.w3.org/2005/Atom}entry'):
-            title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' ')
-            published = entry.find('{http://www.w3.org/2005/Atom}published').text.strip()[:10] # 날짜만 추출 (YYYY-MM-DD)
-            summary = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
-            
-            papers.append({
-                "title": title,
-                "date": published,
-                "abstract": summary
-            })
-        return papers
-    except Exception as e:
-        print(f"❌ 검색 오류 ({query}): {e}")
-        return []
-
 def main():
-    # Gemini 설정
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-    for kw in KEYWORDS:
-        raw_papers = get_papers_arxiv(kw)
-        
-        if not raw_papers:
-            msg = f"ℹ️ **분야: {kw}**\n이번 주에는 새로운 추천 논문이 없습니다."
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": msg})
+    # 시작 알림 (이게 안 오면 웹훅 URL 문제)
+    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🤖 **논문 봇 가동 시작! 총 3개의 분야를 탐색합니다.**"})
+
+    for i, kw in enumerate(KEYWORDS):
+        try:
+            # 1. 진행 상황 알림
+            print(f">>> [{i+1}/{len(KEYWORDS)}] {kw} 작업 시작")
+            
+            # 2. arXiv 검색
+            encoded_query = requests.utils.quote(kw)
+            url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=2&sortBy=submittedDate&sortOrder=descending'
+            response = requests.get(url, timeout=15)
+            root = ET.fromstring(response.text)
+            
+            entries = root.findall('{http://www.w3.org/2005/Atom}entry')
+            
+            # 3. 논문이 없는 경우
+            if not entries:
+                requests.post(DISCORD_WEBHOOK_URL, json={"content": f"ℹ️ **[{kw}]** 분야는 이번 주 신규 논문이 없습니다."})
+                continue
+
+            # 4. 논문이 있는 경우 (제미나이 요약)
+            paper_data = ""
+            for entry in entries:
+                title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' ')
+                date = entry.find('{http://www.w3.org/2005/Atom}published').text.strip()[:10]
+                abstract = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
+                paper_data += f"제목: {title}\n날짜: {date}\n초록: {abstract}\n\n"
+
+            prompt = f"키워드 [{kw}]의 논문들을 제목, 날짜, 한국어 초록 요약(전문성 있게) 형식으로 정리해줘:\n\n{paper_data}"
+            ai_response = model.generate_content(prompt)
+
+            # 5. 전송
+            # 메시지가 너무 길면 잘라서 전송 (디스코드 2000자 제한 방지)
+            final_text = ai_response.text
+            if len(final_text) > 1900:
+                parts = [final_text[i:i+1900] for i in range(0, len(final_text), 1900)]
+                for p in parts:
+                    requests.post(DISCORD_WEBHOOK_URL, json={"content": p})
+            else:
+                requests.post(DISCORD_WEBHOOK_URL, json={"content": final_text})
+            
+            print(f">>> {kw} 완료")
+            time.sleep(5) # 디스코드 속도 제한 방지용 (매우 중요)
+
+        except Exception as e:
+            # 에러 발생 시 디스코드에 비명 지르기
+            error_msg = f"❌ **[{kw}]** 처리 중 에러 발생: {str(e)}"
+            requests.post(DISCORD_WEBHOOK_URL, json={"content": error_msg})
             continue
 
-        # 제미나이에게 논문 정리를 시킵니다.
-        print(f"🤖 제미나이가 '{kw}' 논문을 정리 중입니다...")
-        
-        # 데이터를 텍스트로 변환하여 제미나이에게 전달
-        paper_input = ""
-        for p in raw_papers:
-            paper_input += f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}\n\n"
-
-        prompt = f"""
-        당신은 광학 분야 전문 AI 비서입니다. 아래 제공된 논문 정보를 바탕으로 연구자를 위한 브리핑을 작성해주세요.
-        
-        **요청 사항**:
-        1. 각 논문마다 아래의 형식을 반드시 지켜주세요.
-        2. 초록은 핵심만 간결하게 한국어로 번역 및 요약해주세요.
-        3. 키워드 [{kw}]에 대한 보고서임을 명시하세요.
-
-        **출력 형식**:
-        ## 📂 분야: {kw}
-        ---
-        ### 📄 논문 제목: [여기에 제목]
-        * 📅 **업로드 날짜**: [YYYY-MM-DD]
-        * 📝 **초록 요약**: [한국어로 요약된 내용]
-        
-        (다음 논문이 있다면 위 형식을 반복)
-        """
-        
-        try:
-            # 제미나이가 직접 검색 결과를 가공
-            combined_prompt = prompt + "\n\n[논문 데이터]\n" + paper_input
-            response = model.generate_content(combined_prompt)
-            
-            # 디스코드 전송
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": response.text})
-            print(f"✅ '{kw}' 분야 전송 완료")
-            time.sleep(3) # 전송 간격 유지
-            
-        except Exception as e:
-            print(f"❌ 제미나이 처리 오류: {e}")
+    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🏁 **모든 분야 탐색을 마쳤습니다.**"})
 
 if __name__ == "__main__":
     main()
