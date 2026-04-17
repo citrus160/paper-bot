@@ -155,7 +155,7 @@ Please in Korean"""
 async def send_discord(session, message):
     """Discord 메시지 전송"""
     try:
-        await session.post(DISCORD_WEBHOOK_URL, json={"content": message[:2000]})
+        await session.post(ZOTERO_DISCORD_WEBHOOK_URL, json={"content": message[:2000]})
         await asyncio.sleep(1)
     except Exception as e:
         print(f"Discord 전송 오류: {e}")
