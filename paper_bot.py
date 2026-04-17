@@ -7,69 +7,80 @@ import time
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# 분야별 키워드 (테스트를 위해 3개를 명확히 둠)
 KEYWORDS = [
     'metasurface AND "noise-like pulse"',
     'metasurface AND "saturable absorber"',
-    '"two-temperature model" AND laser'
+    'laser AND "two-temperature model"'
 ]
 
-def main():
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-    # 시작 알림 (이게 안 오면 웹훅 URL 문제)
-    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🤖 **논문 봇 가동 시작! 총 3개의 분야를 탐색합니다.**"})
-
-    for i, kw in enumerate(KEYWORDS):
+def get_papers_arxiv(query):
+    encoded_query = requests.utils.quote(query)
+    url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=2&sortBy=submittedDate&sortOrder=descending'
+    
+    # 서버 대기 시간을 늘리고, 재시도 로직 추가
+    for attempt in range(2): 
         try:
-            # 1. 진행 상황 알림
-            print(f">>> [{i+1}/{len(KEYWORDS)}] {kw} 작업 시작")
-            
-            # 2. arXiv 검색
-            encoded_query = requests.utils.quote(kw)
-            url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=2&sortBy=submittedDate&sortOrder=descending'
-            response = requests.get(url, timeout=15)
+            print(f"🔍 {query} 검색 중... (시도 {attempt+1})")
+            response = requests.get(url, timeout=30) # 30초로 연장
             root = ET.fromstring(response.text)
-            
             entries = root.findall('{http://www.w3.org/2005/Atom}entry')
             
-            # 3. 논문이 없는 경우
-            if not entries:
-                requests.post(DISCORD_WEBHOOK_URL, json={"content": f"ℹ️ **[{kw}]** 분야는 이번 주 신규 논문이 없습니다."})
-                continue
-
-            # 4. 논문이 있는 경우 (제미나이 요약)
-            paper_data = ""
+            papers = []
             for entry in entries:
                 title = entry.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' ')
                 date = entry.find('{http://www.w3.org/2005/Atom}published').text.strip()[:10]
                 abstract = entry.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
-                paper_data += f"제목: {title}\n날짜: {date}\n초록: {abstract}\n\n"
+                papers.append({"title": title, "date": date, "abstract": abstract})
+            return papers
+        except Exception as e:
+            print(f"⚠️ 검색 시도 중 대기 시간 초과 혹은 에러: {e}")
+            time.sleep(5) # 잠시 쉬었다 재시도
+    return []
 
-            prompt = f"키워드 [{kw}]의 논문들을 제목, 날짜, 한국어 초록 요약(전문성 있게) 형식으로 정리해줘:\n\n{paper_data}"
-            ai_response = model.generate_content(prompt)
+def main():
+    # 모델 설정을 더 안정적인 방식으로 변경
+    genai.configure(api_key=GEMINI_API_KEY)
+    
+    # 모델명을 가장 범용적인 'gemini-1.5-flash'로 수정
+    model = genai.GenerativeModel('gemini-1.5-flash')
 
-            # 5. 전송
-            # 메시지가 너무 길면 잘라서 전송 (디스코드 2000자 제한 방지)
-            final_text = ai_response.text
-            if len(final_text) > 1900:
-                parts = [final_text[i:i+1900] for i in range(0, len(final_text), 1900)]
-                for p in parts:
-                    requests.post(DISCORD_WEBHOOK_URL, json={"content": p})
-            else:
-                requests.post(DISCORD_WEBHOOK_URL, json={"content": final_text})
+    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🚀 **논문 분석을 시작합니다.**"})
+
+    for kw in KEYWORDS:
+        try:
+            raw_papers = get_papers_arxiv(kw)
             
-            print(f">>> {kw} 완료")
-            time.sleep(5) # 디스코드 속도 제한 방지용 (매우 중요)
+            if not raw_papers:
+                requests.post(DISCORD_WEBHOOK_URL, json={"content": f"ℹ️ **[{kw}]**: 이번 주 신규 논문이 없거나 서버 응답이 없습니다."})
+                continue
+
+            paper_input = ""
+            for p in raw_papers:
+                paper_input += f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}\n\n"
+
+            # 프롬프트 전달
+            prompt = f"광학 연구자를 위해 키워드 [{kw}] 논문들을 제목, 날짜, 한국어 요약 형식으로 정리해줘:\n\n{paper_input}"
+            
+            # 요약 생성
+            response = model.generate_content(prompt)
+            
+            # 디스코드 전송 (2000자 초과 방지)
+            msg = response.text
+            if len(msg) > 1900:
+                requests.post(DISCORD_WEBHOOK_URL, json={"content": msg[:1900]})
+                requests.post(DISCORD_WEBHOOK_URL, json={"content": msg[1900:3800]})
+            else:
+                requests.post(DISCORD_WEBHOOK_URL, json={"content": msg})
+            
+            print(f"✅ {kw} 전송 완료")
+            time.sleep(5) 
 
         except Exception as e:
-            # 에러 발생 시 디스코드에 비명 지르기
-            error_msg = f"❌ **[{kw}]** 처리 중 에러 발생: {str(e)}"
-            requests.post(DISCORD_WEBHOOK_URL, json={"content": error_msg})
+            # 에러 발생 시 구체적인 내용 보고
+            requests.post(DISCORD_WEBHOOK_URL, json={"content": f"❌ **[{kw}]** 처리 중 오류 발생: {str(e)}"})
             continue
 
-    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🏁 **모든 분야 탐색을 마쳤습니다.**"})
+    requests.post(DISCORD_WEBHOOK_URL, json={"content": "🏁 **모든 분야 리포트 완료!**"})
 
 if __name__ == "__main__":
     main()
