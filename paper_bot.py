@@ -41,7 +41,7 @@ def ask_groq(prompt_text, system_prompt=None):
     except Exception as e:
         return f"❌ 통신 오류: {str(e)}"
 
-def get_arxiv_papers(query, max_results=10):
+def get_arxiv_papers(query, max_results=5):
     """arxiv에서 논문 가져오기"""
     encoded_query = requests.utils.quote(query)
     url = (
@@ -77,7 +77,7 @@ def select_papers(topic, papers):
 
     prompt = f"""다음은 "{topic}" 키워드로 검색된 논문 {len(papers)}편입니다.
 관련성(키워드와 얼마나 밀접한가)과 최신성(날짜가 최근인가)을 모두 고려하여
-가장 중요한 논문 최대 5편을 선별해주세요.
+가장 중요한 논문 최대 2편을 선별해주세요.
 
 선별한 논문의 번호만 JSON 배열로 답해주세요. 예시: [1, 3, 5]
 다른 말은 하지 말고 JSON만 출력하세요.
@@ -105,9 +105,7 @@ def summarize_paper(paper):
 날짜: {paper['date']}
 초록: {paper['abstract']}
 
-아래 형식으로 작성해주세요:
-• 핵심 내용: (2~3문장)
-• 주요 기여: (1~2문장)"""
+Summarize the key content in 2-3 sentences in English. """
 
     return ask_groq(prompt)
 
@@ -127,8 +125,8 @@ async def main():
         for topic in TOPICS:
             await send_discord(session, f"\n## 🔍 {topic}")
 
-            # 1. arxiv에서 논문 10개 가져오기
-            papers = get_arxiv_papers(topic, max_results=10)
+            # 1. arxiv에서 논문 5개 가져오기
+            papers = get_arxiv_papers(topic, max_results=5)
             if not papers:
                 await send_discord(session, "ℹ️ 논문 검색 결과 없음")
                 continue
