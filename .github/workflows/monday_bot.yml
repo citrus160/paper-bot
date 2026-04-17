@@ -1,27 +1,25 @@
 name: Weekly Paper Bot
+
 on:
-  workflow_dispatch: # 수동 실행용
+  workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 1 * * 1'  # 월요일 오전 10시 (KST)
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+
     steps:
-      - name: 코드를 가져옵니다
-        uses: actions/checkout@v4
-      
-      - name: 파일이 진짜 있는지 목록 출력 (디버깅)
-        run: ls -R
-        
-      - name: 파이썬 설정
+      - uses: actions/checkout@v4
+
+      - name: Python 설정
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          
+
       - name: 라이브러리 설치
-        run: pip install scholarly google-generativeai requests
-          
+        run: pip install google-generativeai aiohttp requests
+
       - name: 봇 실행
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
