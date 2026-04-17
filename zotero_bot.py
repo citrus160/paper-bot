@@ -18,6 +18,7 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 READ_TAG = "BOT"
+EXCLUDE_TAGS = {"BOT", "✅Read"}
 
 def ask_groq(prompt_text):
     """Groq API 호출"""
