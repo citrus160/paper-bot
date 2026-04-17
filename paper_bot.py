@@ -16,7 +16,7 @@ TOPICS = ["Metasurface", "Laser physics"]
 def ask_gemini_strict(prompt_text):
     """구글 v1 정식 API 규격에 맞춘 호출 방식입니다."""
     # [수정] 결제 유저에게 가장 확실한 v1 정식 엔드포인트
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
     
     headers = {'Content-Type': 'application/json'}
     # [수정] 구글이 요구하는 표준 페이로드 구조
