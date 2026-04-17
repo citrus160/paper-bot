@@ -29,7 +29,7 @@ def ask_gemini(prompt_text):
 
     for _ in range(3):  # 최대 3번 재시도
         try:
-            model = genai.GenerativeModel("models/gemini-1.5-pro")  # 매번 새로 생성
+            model = genai.GenerativeModel("gemini-1.5-pro")  # 매번 새로 생성
             response = model.generate_content(prompt_text)
 
             if response and response.text:
