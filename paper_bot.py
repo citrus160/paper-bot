@@ -7,128 +7,109 @@ import aiohttp
 from datetime import datetime, timedelta
 import google.generativeai as genai
 
-# ==========================================
-# 1. 환경 변수 및 설정
-# ==========================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# API 버전을 v1으로 고정하고 REST 방식으로 설정 (404 에러 방지)
+# v1 정식 버전 설정
 genai.configure(api_key=GEMINI_API_KEY, transport='rest')
 
-# 연구 주제 리스트 (여기에 관심 있는 주제를 자유롭게 적으세요)
 TOPICS = [
-    "Metasurface based Saturable Absorber for ultrafast laser",
-    "Two-temperature model in laser-matter interaction",
+    "Metasurface Saturable Absorber",
+    "Terahertz metalens",
     "Nonlinear optics with nanophotonic structures"
 ]
 
-# ==========================================
-# 2. 핵심 기능 함수
-# ==========================================
-
 def ask_gemini(prompt_text):
-    """제미나이 1.5 Pro 모델을 사용하여 판단 및 요약 수행"""
     try:
-        # 결제 등급(Tier) 유저라면 Pro 모델이 더 정교한 판단을 내립니다.
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        response = model.generate_content(prompt_text)
-        if response and response.text:
-            return response.text
-    except Exception as e:
-        print(f"Gemini 호출 오류: {e}")
+        # Tier 유저라면 Pro를 우선 시도하되 실패 시 Flash로 자동 전환
+        for model_name in ["gemini-1.5-pro", "gemini-1.5-flash"]:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt_text)
+                if response and response.text:
+                    return response.text
+            except:
+                continue
+    except:
         return None
-    return None
 
 def get_arxiv_papers(query):
-    """arXiv에서 최근 1개월 이내의 논문을 검색"""
-    # 1개월 전 날짜 계산 (arXiv 검색 포맷: YYYYMMDDHHMMSS)
-    one_month_ago = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d%H%M%S')
-    
+    """검색 범위를 유연하게 조정하여 논문을 가져옵니다."""
     encoded_query = requests.utils.quote(query)
-    # 최근 1개월 내 업데이트된 논문만 타겟팅 (최대 5개 추출)
-    url = f'http://export.arxiv.org/api/query?search_query={encoded_query}+AND+lastUpdatedDate:[{one_month_ago}+TO+20300101000000]&start=0&max_results=5&sortBy=submittedDate&sortOrder=descending'
+    # 날짜 필터를 쿼리문 안에서 빼고, 대신 정렬 순서를 최신순으로 하여 10개까지 가져옵니다.
+    url = f'http://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results=10&sortBy=submittedDate&sortOrder=descending'
     
     try:
         res = requests.get(url, timeout=30)
         root = ET.fromstring(res.text)
         entries = root.findall('{http://www.w3.org/2005/Atom}entry')
         
+        one_month_ago = datetime.now() - timedelta(days=30)
         papers = []
+        
         for e in entries:
-            papers.append({
-                "title": e.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' '),
-                "date": e.find('{http://www.w3.org/2005/Atom}published').text[:10],
-                "journal": "arXiv (Preprint)",
-                "abstract": e.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
-            })
+            pub_date_str = e.find('{http://www.w3.org/2005/Atom}published').text[:10]
+            pub_date = datetime.strptime(pub_date_str, '%Y-%m-%d')
+            
+            # 검색 결과 중 최근 1개월 이내 것만 리스트에 담음
+            if pub_date >= one_month_ago:
+                papers.append({
+                    "title": e.find('{http://www.w3.org/2005/Atom}title').text.strip().replace('\n', ' '),
+                    "date": pub_date_str,
+                    "journal": "arXiv (Preprint)",
+                    "abstract": e.find('{http://www.w3.org/2005/Atom}summary').text.strip().replace('\n', ' ')
+                })
         return papers
-    except Exception as e:
-        print(f"arXiv 검색 중 오류: {e}")
+    except:
         return []
 
 async def send_discord(session, message):
-    """디스코드 웹훅 전송 (글자 수 제한 대응)"""
     if not message: return
     for i in range(0, len(message), 2000):
         await session.post(DISCORD_WEBHOOK_URL, json={"content": message[i:i+2000]})
 
-# ==========================================
-# 3. 메인 로직 (판단 및 선별)
-# ==========================================
-
 async def main():
     async with aiohttp.ClientSession() as session:
-        await send_discord(session, "🛰️ **제미나이 지능형 논문 비서 가동 (최근 1개월 분석)**")
+        await send_discord(session, "📡 **논문 탐색 엔진 가동 (검색 범위 최적화 버전)**")
 
         for topic in TOPICS:
-            # [Step 1] 제미나이에게 최적의 검색어 생성을 맡김
-            query_prompt = f"연구 주제 [{topic}]에 대해 arXiv에서 최근 1개월간 발표된 논문을 찾기 위한 전문적인 영어 검색어 조합을 딱 한 줄만 만들어줘. 검색어만 보내."
+            # Step 1: 검색어 생성 (너무 복잡하지 않게 유도)
+            query_prompt = f"연구 주제 [{topic}]를 arXiv에서 검색하기 위한 2~3개의 핵심 키워드 조합만 영어로 보내줘. 예: (Metasurface AND Laser). 다른 설명 금지."
             optimized_query = ask_gemini(query_prompt)
-            
-            if not optimized_query:
-                continue
+            if not optimized_query: continue
             optimized_query = optimized_query.strip().replace('"', '')
-            
-            # [Step 2] 논문 데이터 수집
+
+            # Step 2: 논문 수집
             raw_papers = get_arxiv_papers(optimized_query)
 
             if not raw_papers:
-                await send_discord(session, f"ℹ️ **[{topic}]**: 최근 1개월 내 검색된 논문이 없습니다.")
+                await send_discord(session, f"ℹ️ **[{topic}]**: 최근 1개월 내 arXiv에 등록된 관련 논문이 없습니다.")
                 continue
 
-            # [Step 3] 제미나이가 초록을 읽고 적합성 판단 및 리포트 작성
+            # Step 3: 제미나이의 정밀 선별
             papers_info = "\n\n".join([f"제목: {p['title']}\n날짜: {p['date']}\n초록: {p['abstract']}" for p in raw_papers])
             
             analysis_prompt = f"""
-너는 광학 및 레이저 물리 분야의 전문 연구원이다.
-아래 논문 리스트는 연구 주제 [{topic}]와 관련하여 최근 1개월 내에 발표된 것들이다.
+너는 광학 전문가다. 아래 논문 리스트에서 주제 [{topic}]과 밀접한 관련이 있는 논문만 골라라.
+최근 1개월 내 논문들이다.
 
-[수행 지침]
-1. 각 논문의 초록을 깊이 있게 읽고, 주제 [{topic}]과 학술적으로 정말 밀접한 관련이 있는지 판단해라.
-2. 관련성이 낮은 논문(단순 키워드 매칭 등)은 리스트에서 제외해라.
-3. 선별된 논문에 대해서만 다음 형식을 지켜 한국어로 보고해라:
-   ---
-   ### 📄 논문 제목: (원문 제목)
-   * 📅 **출간 날짜**: (날짜)
-   * 🏛️ **저널**: (arXiv 혹은 확인 가능한 저널명)
-   * 📝 **초록 요약**: (핵심 물리 메커니즘을 중심으로 연구자가 이해하기 쉽게 3줄 요약)
-   * 💡 **선정 이유**: (이 논문이 해당 연구 주제에서 왜 중요한지 전문적인 견해)
+[작성 형식]
+- **제목**: (원문 제목)
+- **출간 날짜**: (날짜)
+- **저널**: arXiv (Preprint)
+- **초록 요약**: (한국어 3줄 요약)
+- **전문가 평가**: (연구 가치 1줄)
 
-만약 모든 논문이 연구 주제와 적합하지 않다면, "해당 주제에 대해 최근 1개월 내 추천할 만한 적합한 논문이 없습니다."라고만 답변해라.
+만약 주제와 맞는 논문이 하나도 없다면 "해당 주제와 일치하는 최신 논문이 없습니다."라고 답변해라.
 
 논문 데이터:
 {papers_info}
 """
             report = ask_gemini(analysis_prompt)
-            
-            if report:
-                await send_discord(session, f"## 📡 주제 분석: {topic}\n{report}")
-            
-            # API 할당량 및 디스코드 속도 제한을 위해 대기
-            await asyncio.sleep(10)
+            await send_discord(session, f"## 📡 주제: {topic}\n{report}")
+            await asyncio.sleep(8)
 
-        await send_discord(session, "🏁 **연구 리포트 생성을 마쳤습니다.**")
+        await send_discord(session, "🏁 **탐색 종료**")
 
 if __name__ == "__main__":
     asyncio.run(main())
