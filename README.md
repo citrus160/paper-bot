@@ -6,7 +6,7 @@
 
 ## 🤖 봇 종류
 
-### 1. 📅 Weekly Paper Bot (월요일 오전 10시 KST)
+### 1. 📅 Weekly Paper Bot (월요일 오전 7시 KST)
 최신 논문을 자동으로 검색하고 선별해서 Discord로 전송합니다.
 
 **동작 방식:**
