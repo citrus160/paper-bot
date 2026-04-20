@@ -2,8 +2,8 @@ name: Zotero Reading Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1 * * 2'  # 화요일 오전 10시 (KST)
-    - cron: '0 1 * * 4'  # 목요일 오전 10시 (KST)
+    - cron: '0 22 * * 2'  # 화요일 오전 07시 (KST)
+    - cron: '0 22 * * 4'  # 목요일 오전 07시 (KST)
 jobs:
   run-bot:
     runs-on: ubuntu-latest
