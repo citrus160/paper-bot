@@ -314,8 +314,6 @@ async def main():
             queries = generate_queries_for_topic(topic)
 
             await send_discord(session, f"\n## 🔍 {topic_name}")
-            await send_discord(session, "🧭 검색 쿼리: " + " | ".join(queries[:5]))
-
             # 1. 각 쿼리로 arxiv + OpenAlex 검색
             all_papers = []
             for query in queries:
@@ -365,3 +363,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
