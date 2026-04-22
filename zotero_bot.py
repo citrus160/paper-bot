@@ -12,8 +12,8 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 ZOTERO_DISCORD_WEBHOOK_URL = os.getenv("ZOTERO_DISCORD_WEBHOOK_URL")
 ZOTERO_API_KEY = os.getenv("ZOTERO_API_KEY")
 ZOTERO_USER_ID = os.getenv("ZOTERO_USER_ID")
-UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL")
 ZOTERO_USERNAME = os.getenv("ZOTERO_USERNAME")
+UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL")
 
 ZOTERO_BASE = f"https://api.zotero.org/users/{ZOTERO_USER_ID}"
 HEADERS = {
@@ -25,8 +25,9 @@ EXCLUDE_TAGS = {"BOT", "✅Read"}
 
 def get_zotero_links(item_key):
     """Zotero 앱/웹에서 바로 여는 링크 생성"""
-    web_link = f"https://www.zotero.org/{ZOTERO_USERNAME}/items/{item_key}"
-    return web_link
+    if not ZOTERO_USERNAME:
+        return None
+    return f"https://www.zotero.org/{ZOTERO_USERNAME}/items/{item_key}"
 
 def normalize_summary_text(text):
     """LLM 출력 줄바꿈 정리"""
@@ -414,12 +415,13 @@ async def main():
         doi = item_data.get("DOI", "")
         external_link = url or (f"https://doi.org/{doi}" if doi else "링크 없음")
         zotero_web_link = get_zotero_links(item_key)
+        zotero_line = zotero_web_link or "ZOTERO_USERNAME 미설정"
         await send_discord(
             session,
             "🔗 논문 링크: "
             f"{external_link}\n"
             "🌐 Zotero 웹: "
-            f"{zotero_web_link}"
+            f"{zotero_line}"
         )
 
 if __name__ == "__main__":
