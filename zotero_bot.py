@@ -22,6 +22,12 @@ HEADERS = {
 READ_TAG = "BOT"
 EXCLUDE_TAGS = {"BOT", "✅Read"}
 
+def get_zotero_links(item_key):
+    """Zotero 앱/웹에서 바로 여는 링크 생성"""
+    app_link = f"zotero://select/library/items/{item_key}"
+    web_link = f"https://www.zotero.org/users/{ZOTERO_USER_ID}/items/{item_key}/library"
+    return app_link, web_link
+
 def ask_groq(prompt_text):
     """Groq API 호출"""
     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -348,8 +354,17 @@ async def main():
         # 5. 링크 전송
         url = item_data.get("url", "")
         doi = item_data.get("DOI", "")
-        link = url or (f"https://doi.org/{doi}" if doi else "링크 없음")
-        await send_discord(session, f"🔗 {link}")
+        external_link = url or (f"https://doi.org/{doi}" if doi else "링크 없음")
+        zotero_app_link, zotero_web_link = get_zotero_links(item_key)
+        await send_discord(
+            session,
+            "🔗 논문 링크: "
+            f"{external_link}\n"
+            "📚 Zotero 앱: "
+            f"{zotero_app_link}\n"
+            "🌐 Zotero 웹: "
+            f"{zotero_web_link}"
+        )
 
 if __name__ == "__main__":
     asyncio.run(main())
