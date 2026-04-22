@@ -6,6 +6,7 @@ import asyncio
 import aiohttp
 import re
 from urllib.parse import quote
+from html import unescape
 
 # 환경 변수
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -15,6 +16,7 @@ ZOTERO_API_KEY = os.getenv("ZOTERO_API_KEY")
 ZOTERO_USER_ID = os.getenv("ZOTERO_USER_ID")
 ZOTERO_USERNAME = os.getenv("ZOTERO_USERNAME")
 UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL")
+CONTACT_EMAIL = UNPAYWALL_EMAIL or os.getenv("CONTACT_EMAIL")
 
 ZOTERO_BASE = f"https://api.zotero.org/users/{ZOTERO_USER_ID}"
 HEADERS = {
@@ -40,6 +42,117 @@ def normalize_summary_text(text):
     text = re.sub(r"\n\n(?=\d+\.)", "\n", text)
     text = re.sub(r"\n\n(?=\*\*)", "\n", text)
     return text
+
+def clean_abstract_text(text):
+    """메타데이터 API에서 받은 초록 텍스트 정리"""
+    if not text:
+        return None
+
+    text = unescape(text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+def invert_openalex_abstract(index):
+    """OpenAlex abstract_inverted_index를 평문 초록으로 복원"""
+    if not index:
+        return None
+
+    positions = {}
+    for word, pos_list in index.items():
+        for pos in pos_list:
+            positions[pos] = word
+
+    if not positions:
+        return None
+
+    words = [positions[i] for i in range(max(positions) + 1) if i in positions]
+    return clean_abstract_text(" ".join(words))
+
+def get_crossref_abstract(doi):
+    """Crossref에서 DOI 기반 초록 조회"""
+    if not doi:
+        return None
+
+    try:
+        params = {}
+        if CONTACT_EMAIL:
+            params["mailto"] = CONTACT_EMAIL
+
+        res = requests.get(
+            f"https://api.crossref.org/works/{quote(doi)}",
+            params=params,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if res.status_code != 200:
+            return None
+
+        message = res.json().get("message", {})
+        return clean_abstract_text(message.get("abstract"))
+    except Exception as e:
+        print(f"Crossref 초록 조회 오류: {e}")
+        return None
+
+def get_openalex_abstract(item_data):
+    """OpenAlex에서 DOI 또는 제목 기반 초록 조회"""
+    doi = item_data.get("DOI", "").strip()
+    title = item_data.get("title", "").strip()
+
+    try:
+        if doi:
+            res = requests.get(
+                f"https://api.openalex.org/works/https://doi.org/{quote(doi)}",
+                timeout=20,
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if res.status_code == 200:
+                data = res.json()
+                abstract = invert_openalex_abstract(data.get("abstract_inverted_index"))
+                if abstract:
+                    return abstract
+
+        if title:
+            params = {
+                "search": title,
+                "per-page": 5
+            }
+            res = requests.get(
+                "https://api.openalex.org/works",
+                params=params,
+                timeout=20,
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if res.status_code != 200:
+                return None
+
+            results = res.json().get("results", [])
+            normalized_title = re.sub(r"\s+", " ", title).strip().lower()
+            for work in results:
+                candidate_title = re.sub(r"\s+", " ", work.get("display_name", "")).strip().lower()
+                if candidate_title != normalized_title:
+                    continue
+                abstract = invert_openalex_abstract(work.get("abstract_inverted_index"))
+                if abstract:
+                    return abstract
+    except Exception as e:
+        print(f"OpenAlex 초록 조회 오류: {e}")
+
+    return None
+
+def find_online_abstract(item_data):
+    """Zotero 초록이 없을 때 온라인에서 초록 조회"""
+    doi = item_data.get("DOI", "").strip()
+    if doi:
+        crossref_abstract = get_crossref_abstract(doi)
+        if crossref_abstract:
+            return crossref_abstract, "Crossref"
+
+    openalex_abstract = get_openalex_abstract(item_data)
+    if openalex_abstract:
+        return openalex_abstract, "OpenAlex"
+
+    return None, None
 
 def ask_gemini(prompt_text):
     """Gemini API 호출"""
@@ -375,11 +488,16 @@ async def main():
 
         await send_discord(session, f"📄 **{title}**\n👥 {authors} ({year}) | {journal}")
 
-        # 2. 초록만 사용해서 요약
+        # 2. Zotero 초록 또는 온라인 초록으로 요약
+        abstract_source = "Zotero"
+        if not abstract:
+            await send_discord(session, "🔎 Zotero 초록이 없어 온라인 초록을 찾는 중...")
+            abstract, abstract_source = find_online_abstract(item_data)
+
         if abstract:
             await send_discord(session, "📝 초록 기반 상세 요약 중...")
             summary = summarize_paper(title, abstract, is_full_text=False)
-            summary = f"📝 **초록 기반 상세 요약**\n{summary}"
+            summary = f"📝 **초록 기반 상세 요약** (`{abstract_source}`)\n{summary}"
         else:
             summary = "⚠️ 초록이 없어서 요약할 수 없어요."
 
