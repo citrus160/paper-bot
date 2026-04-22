@@ -24,9 +24,19 @@ EXCLUDE_TAGS = {"BOT", "✅Read"}
 
 def get_zotero_links(item_key):
     """Zotero 앱/웹에서 바로 여는 링크 생성"""
-    app_link = f"zotero://select/library/items/{item_key}"
-    web_link = f"https://www.zotero.org/users/{ZOTERO_USER_ID}/items/{item_key}/library"
-    return app_link, web_link
+    web_link = f"https://www.zotero.org/users/{ZOTERO_USER_ID}/items/{item_key}"
+    return web_link
+
+def normalize_summary_text(text):
+    """LLM 출력 줄바꿈 정리"""
+    if not text:
+        return text
+
+    text = text.replace("\r\n", "\n").strip()
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"\n\n(?=\d+\.)", "\n", text)
+    text = re.sub(r"\n\n(?=\*\*)", "\n", text)
+    return text
 
 def ask_groq(prompt_text):
     """Groq API 호출"""
@@ -311,7 +321,7 @@ Be concise, technical, and specific. If the source is only an abstract, state un
 
 Please in Korean"""
 
-    return ask_groq(prompt)
+    return normalize_summary_text(ask_groq(prompt))
 
 async def send_discord(session, message):
     """Discord 메시지 전송"""
@@ -402,13 +412,11 @@ async def main():
         url = item_data.get("url", "")
         doi = item_data.get("DOI", "")
         external_link = url or (f"https://doi.org/{doi}" if doi else "링크 없음")
-        zotero_app_link, zotero_web_link = get_zotero_links(item_key)
+        zotero_web_link = get_zotero_links(item_key)
         await send_discord(
             session,
             "🔗 논문 링크: "
             f"{external_link}\n"
-            "📚 Zotero 앱: "
-            f"{zotero_app_link}\n"
             "🌐 Zotero 웹: "
             f"{zotero_web_link}"
         )
