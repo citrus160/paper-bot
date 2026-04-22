@@ -43,7 +43,7 @@ TOPICS = [
 
 ---
 
-### 2. 📖 Zotero Reading Bot (화/목 오전 10시 KST)
+### 2. 📖 Zotero Reading Bot (화/목 오전 7시 KST)
 Zotero에 저장된 읽지 않은 논문을 랜덤으로 1편 골라 요약해줍니다.
 
 **동작 방식:**
