@@ -13,6 +13,7 @@ ZOTERO_DISCORD_WEBHOOK_URL = os.getenv("ZOTERO_DISCORD_WEBHOOK_URL")
 ZOTERO_API_KEY = os.getenv("ZOTERO_API_KEY")
 ZOTERO_USER_ID = os.getenv("ZOTERO_USER_ID")
 UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL")
+ZOTERO_USERNAME = os.getenv("ZOTERO_USERNAME")
 
 ZOTERO_BASE = f"https://api.zotero.org/users/{ZOTERO_USER_ID}"
 HEADERS = {
@@ -24,7 +25,7 @@ EXCLUDE_TAGS = {"BOT", "✅Read"}
 
 def get_zotero_links(item_key):
     """Zotero 앱/웹에서 바로 여는 링크 생성"""
-    web_link = f"https://www.zotero.org/users/{ZOTERO_USER_ID}/items/{item_key}"
+    web_link = f"https://www.zotero.org/{ZOTERO_USERNAME}/items/{item_key}"
     return web_link
 
 def normalize_summary_text(text):
