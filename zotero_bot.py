@@ -113,6 +113,44 @@ def get_pdf_text_from_url(pdf_url):
         print(f"PDF 다운로드 오류: {e}")
         return None
 
+def get_zotero_attachment_pdf_text(parent_item_key):
+    """Zotero 자식 attachment 중 PDF가 있으면 텍스트 추출"""
+    try:
+        res = requests.get(
+            f"{ZOTERO_BASE}/items/{parent_item_key}/children",
+            headers=HEADERS,
+            timeout=20
+        )
+        if res.status_code != 200:
+            return None, None
+
+        children = res.json()
+        for child in children:
+            child_data = child.get("data", {})
+            if child_data.get("itemType") != "attachment":
+                continue
+            if child_data.get("contentType") != "application/pdf":
+                continue
+
+            attachment_key = child.get("key")
+            attachment_title = child_data.get("title", "Zotero PDF")
+            file_res = requests.get(
+                f"{ZOTERO_BASE}/items/{attachment_key}/file",
+                headers={"Zotero-API-Key": ZOTERO_API_KEY},
+                timeout=40,
+                allow_redirects=True
+            )
+            if file_res.status_code != 200 or not file_res.content:
+                continue
+
+            pdf_text = extract_text_from_pdf_bytes(file_res.content)
+            if pdf_text:
+                return pdf_text, attachment_title
+    except Exception as e:
+        print(f"Zotero attachment PDF 오류: {e}")
+
+    return None, None
+
 def find_arxiv_id(item_data):
     """Zotero 아이템에서 arXiv ID 찾기"""
     # DOI에서 찾기
@@ -308,32 +346,41 @@ async def main():
 
         await send_discord(session, f"📄 **{title}**\n👥 {authors} ({year}) | {journal}")
 
-        # 2. 다양한 플랫폼에서 원문 PDF 시도
+        # 2. Zotero attachment PDF 우선 시도
         summary = None
+        zotero_pdf_text, zotero_attachment_title = get_zotero_attachment_pdf_text(item_key)
+
+        if zotero_pdf_text:
+            await send_discord(session, f"✅ Zotero PDF 확보! 상세 요약 중... (`{zotero_attachment_title}`)")
+            summary = summarize_paper(title, zotero_pdf_text, is_full_text=True)
+            summary = f"📚 **Zotero PDF 기반 상세 요약**\n{summary}"
+
+        # 3. Zotero PDF가 없으면 다양한 플랫폼에서 원문 PDF 시도
         full_text_sources = collect_full_text_sources(item_data)
 
-        if full_text_sources:
+        if full_text_sources and not summary:
             await send_discord(
                 session,
                 "🔍 원문 PDF 탐색 중... "
                 + ", ".join(source_name for source_name, _ in full_text_sources)
             )
 
-        for source_name, pdf_url in full_text_sources:
-            print(f"{source_name} PDF 시도: {pdf_url}")
-            pdf_text = get_pdf_text_from_url(pdf_url)
-            if not pdf_text:
-                continue
+        if not summary:
+            for source_name, pdf_url in full_text_sources:
+                print(f"{source_name} PDF 시도: {pdf_url}")
+                pdf_text = get_pdf_text_from_url(pdf_url)
+                if not pdf_text:
+                    continue
 
-            await send_discord(session, f"✅ `{source_name}` 원문 확보! 상세 요약 중...")
-            summary = summarize_paper(title, pdf_text, is_full_text=True)
-            summary = f"📑 **원문 기반 상세 요약** (`{source_name}`)\n{summary}"
-            break
+                await send_discord(session, f"✅ `{source_name}` 원문 확보! 상세 요약 중...")
+                summary = summarize_paper(title, pdf_text, is_full_text=True)
+                summary = f"📑 **원문 기반 상세 요약** (`{source_name}`)\n{summary}"
+                break
 
         if full_text_sources and not summary:
             await send_discord(session, "⚠️ 원문 PDF 확보 실패, 초록으로 요약합니다.")
 
-        # 3. PDF 실패 또는 원문 소스 없으면 → 초록으로 요약
+        # 4. PDF 실패 또는 원문 소스 없으면 → 초록으로 요약
         if not summary:
             if abstract:
                 await send_discord(session, "📝 초록 기반 상세 요약 중...")
@@ -344,14 +391,14 @@ async def main():
 
         await send_discord(session, summary)
 
-        # 4. Zotero에 읽음 태그 추가
+        # 5. Zotero에 읽음 태그 추가
         success = mark_as_read(item_key, item_version, current_tags)
         if success:
             await send_discord(session, f"✅ Zotero에 `{READ_TAG}` 태그 추가 완료!")
         else:
             await send_discord(session, f"⚠️ Zotero 태그 추가 실패. 수동으로 추가해주세요.")
 
-        # 5. 링크 전송
+        # 6. 링크 전송
         url = item_data.get("url", "")
         doi = item_data.get("DOI", "")
         external_link = url or (f"https://doi.org/{doi}" if doi else "링크 없음")
